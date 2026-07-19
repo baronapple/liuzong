@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>实时状态</title>
+<style>
+  :root{
+    --paper:#FBF7F1;
+    --ink:#20242B;
+    --ink-soft:#5B6068;
+    --idle:#3F9142;
+    --idle-bg:#E7F3E6;
+    --busy:#C8862A;
+    --busy-bg:#FBF0DE;
+    --full:#C24B3F;
+    --full-bg:#FBE7E3;
+    --closed:#8A8F98;
+    --closed-bg:#EDEDEF;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
+    background:#E7E2D8;
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    padding:40px 16px 60px;
+  }
+  .app{width:100%;max-width:420px;}
+  .card{
+    background:var(--paper);
+    border-radius:24px;
+    padding:32px 26px 26px;
+    box-shadow:0 18px 40px -18px rgba(32,36,43,.35), 0 2px 8px rgba(32,36,43,.06);
+    position:relative;
+    overflow:hidden;
+  }
+  .pole{
+    position:absolute; top:0; left:0; right:0; height:6px;
+    background:repeating-linear-gradient(-45deg,var(--full) 0 10px,var(--paper) 10px 20px,var(--ink) 20px 30px,var(--paper) 30px 40px);
+  }
+  .shop-row{display:flex;align-items:baseline;justify-content:space-between;margin-top:10px;}
+  .shop-name{font-size:22px;font-weight:700;}
+  .open-pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;}
+  .open-pill.open{background:var(--idle-bg);color:var(--idle);}
+  .open-pill.closed{background:var(--closed-bg);color:var(--closed);}
+  .status-hero{margin-top:24px;border-radius:16px;padding:24px 20px;display:flex;align-items:center;gap:14px;}
+  .status-hero.idle{background:var(--idle-bg);}
+  .status-hero.busy{background:var(--busy-bg);}
+  .status-hero.full{background:var(--full-bg);}
+  .status-hero.closed{background:var(--closed-bg);}
+  .status-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;}
+  .status-dot.idle{background:var(--idle);box-shadow:0 0 0 5px #3F914226;}
+  .status-dot.busy{background:var(--busy);box-shadow:0 0 0 5px #C8862A26;}
+  .status-dot.full{background:var(--full);box-shadow:0 0 0 5px #C24B3F26;}
+  .status-dot.closed{background:var(--closed);box-shadow:0 0 0 5px #8A8F9826;}
+  .status-text{font-size:23px;font-weight:800;}
+  .status-text.idle{color:var(--idle);}
+  .status-text.busy{color:var(--busy);}
+  .status-text.full{color:var(--full);}
+  .status-text.closed{color:var(--closed);}
+  .status-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px;}
+  .stat-box{background:#00000006;border-radius:14px;padding:16px 14px;}
+  .stat-label{font-size:11.5px;color:var(--ink-soft);font-weight:600;}
+  .stat-value{font-size:28px;font-weight:800;margin-top:4px;}
+  .stat-value small{font-size:14px;font-weight:600;color:var(--ink-soft);margin-left:2px;}
+  .updated-row{margin-top:20px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;color:#9A9488;}
+  .live-dot{width:6px;height:6px;border-radius:50%;background:var(--idle);animation:pulse 1.6s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+  .footer-link{display:block;text-align:center;margin-top:20px;font-size:12px;color:#9A9488;text-decoration:none;}
+  .err{text-align:center;color:var(--ink-soft);font-size:13px;margin-top:20px;padding:0 10px;}
+</style>
+</head>
+<body>
+  <div class="app">
+    <div id="card" class="card">
+      <div class="pole"></div>
+      <div class="err">加载中...</div>
+    </div>
+  </div>
+
+<script>
+  // 换成你部署好的 Cloudflare Worker 地址（见 README 第 4 步）
+  const API_BASE = 'https://barber-status-api.haircutliuzong.workers.dev';
+
+  const STATUS_LABEL = {
+    idle: '空闲，可直接来',
+    busy: '有点忙，建议预留时间',
+    full: '客满，暂不建议现在来'
+  };
+
+  function timeAgo(ts){
+    const diff = Math.max(0, Date.now() - ts);
+    const min = Math.floor(diff/60000);
+    if(min < 1) return '刚刚更新';
+    if(min < 60) return min + ' 分钟前更新';
+    return Math.floor(min/60) + ' 小时前更新';
+  }
+
+  function render(state){
+    const eff = state.isOpen ? state.status : 'closed';
+    const label = state.isOpen ? STATUS_LABEL[state.status] : '今日已打烊';
+    document.getElementById('card').innerHTML = `
+      <div class="pole"></div>
+      <div class="shop-row">
+        <div class="shop-name">${escapeHtml(state.shopName)}</div>
+        <div class="open-pill ${state.isOpen ? 'open':'closed'}">${state.isOpen ? '营业中' : '已打烊'}</div>
+      </div>
+      <div class="status-hero ${eff}">
+        <div class="status-dot ${eff}"></div>
+        <div>
+          <div class="status-text ${eff}">${label}</div>
+          <div class="status-sub">${state.isOpen ? '老板实时更新的状态' : '欢迎明天再来～'}</div>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-label">等待人数</div>
+          <div class="stat-value">${state.isOpen ? state.waitingCount : '—'}${state.isOpen ? '<small>人</small>' : ''}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">预计等待</div>
+          <div class="stat-value">${state.isOpen ? state.waitMinutes : '—'}${state.isOpen ? '<small>分钟</small>' : ''}</div>
+        </div>
+      </div>
+      <div class="updated-row"><span class="live-dot"></span><span id="timeAgo">${timeAgo(state.lastUpdated)}</span></div>
+    `;
+    window._lastUpdated = state.lastUpdated;
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.innerText = str;
+    return div.innerHTML;
+  }
+
+  async function fetchStatus(){
+    try{
+      const res = await fetch(API_BASE + '/status');
+      const json = await res.json();
+      if(json.success){
+        render(json.data);
+      } else {
+        showError();
+      }
+    }catch(e){
+      showError();
+    }
+  }
+
+  function showError(){
+    document.getElementById('card').innerHTML =
+      '<div class="pole"></div><div class="err">暂时连接不上，下拉刷新试试～</div>';
+  }
+
+  fetchStatus();
+  setInterval(fetchStatus, 5000); // 每5秒刷新一次
+
+  // 每分钟更新一下"多久前更新"的文字，不用等下次拉取
+  setInterval(() => {
+    const el = document.getElementById('timeAgo');
+    if(el && window._lastUpdated) el.textContent = timeAgo(window._lastUpdated);
+  }, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+name = "barber-status-api"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# 部署前，把下面这行的 id 换成你自己创建的 KV 命名空间 ID（见 README 步骤）
+kv_namespaces = [
+  { binding = "STATUS_KV", id = "52ea16c9e87c401c8a41b4583ec899bf" }
+]
+
+# OWNER_PIN 不写在这里，用命令行 `wrangler secret put OWNER_PIN` 单独设置（更安全，不会被提交到 git）

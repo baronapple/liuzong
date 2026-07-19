@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>老板控制面板</title>
+<style>
+  :root{
+    --panel:#1B1F26;
+    --panel-2:#252B34;
+    --panel-line:#343B46;
+    --brass:#B8874B;
+    --idle:#3F9142;
+    --busy:#C8862A;
+    --full:#C24B3F;
+    --closed:#8A8F98;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
+    background:#E7E2D8;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:40px 16px 60px;
+  }
+  .app{width:100%;max-width:420px;}
+
+  /* 锁屏 */
+  .lock{text-align:center;margin-top:60px;}
+  .lock-title{font-size:24px;font-weight:800;color:#20242B;}
+  .lock-sub{font-size:13px;color:#7A7568;margin:8px 0 28px;}
+  .pin-input{
+    width:100%;
+    background:#fff;
+    border:none;
+    border-radius:14px;
+    padding:16px;
+    font-size:20px;
+    text-align:center;
+    letter-spacing:6px;
+    box-shadow:0 8px 30px -12px rgba(0,0,0,.2);
+  }
+  .unlock-btn{
+    width:100%;
+    margin-top:14px;
+    background:var(--panel);
+    color:#fff;
+    font-weight:700;
+    font-size:15px;
+    border:none;
+    border-radius:14px;
+    padding:14px;
+    cursor:pointer;
+  }
+  .unlock-btn:disabled{opacity:.6;}
+  .lock-err{margin-top:14px;color:var(--full);font-size:13px;}
+
+  /* 控制面板 */
+  .panel{background:var(--panel);border-radius:24px;padding:26px;color:#fff;display:none;}
+  .panel.show{display:block;}
+  .section-label{font-size:12px;font-weight:700;color:#8B93A0;letter-spacing:.03em;margin:20px 0 10px;}
+  .section-label:first-child{margin-top:0;}
+  .name-input{
+    width:100%;background:var(--panel-2);border:1px solid var(--panel-line);
+    border-radius:10px;color:#fff;font-size:16px;font-weight:700;padding:10px 12px;
+  }
+  .toggle-row{display:flex;background:var(--panel-2);border-radius:12px;padding:4px;gap:4px;}
+  .toggle-row button{
+    flex:1;border:none;background:transparent;color:#B7BCC5;font-weight:700;
+    font-size:14px;padding:11px 0;border-radius:9px;cursor:pointer;
+  }
+  .toggle-row button.active.on{background:var(--idle);color:#fff;}
+  .toggle-row button.active.off{background:var(--closed);color:#fff;}
+  .status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .status-btn{
+    border:1.5px solid var(--panel-line);background:var(--panel-2);color:#D6D9DE;
+    border-radius:12px;padding:14px 6px;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center;
+  }
+  .status-btn .emoji{display:block;font-size:18px;margin-bottom:4px;}
+  .status-btn.idle.active{background:var(--idle);border-color:var(--idle);color:#fff;}
+  .status-btn.busy.active{background:var(--busy);border-color:var(--busy);color:#fff;}
+  .status-btn.full.active{background:var(--full);border-color:var(--full);color:#fff;}
+  .counter-row{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--panel-2);border-radius:12px;padding:10px 10px 10px 18px;
+  }
+  .counter-num{font-size:26px;font-weight:800;}
+  .counter-btns{display:flex;gap:8px;}
+  .counter-btns button{
+    width:42px;height:42px;border-radius:10px;border:none;background:var(--panel);
+    color:#fff;font-size:20px;font-weight:700;cursor:pointer;
+  }
+  .chip-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{
+    flex:1 1 auto;min-width:64px;border:1.5px solid var(--panel-line);background:var(--panel-2);
+    color:#D6D9DE;padding:11px 0;border-radius:10px;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center;
+  }
+  .chip.active{background:var(--brass);border-color:var(--brass);color:#fff;}
+  .save-note{margin-top:20px;font-size:12px;color:#7A8290;text-align:center;}
+  .preview-link{display:block;text-align:center;margin-top:16px;font-size:12px;color:#B7BCC5;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div id="lock" class="lock">
+    <div class="lock-title">老板端</div>
+    <div class="lock-sub">请输入密码解锁控制面板</div>
+    <input id="pinInput" class="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="密码">
+    <button id="unlockBtn" class="unlock-btn">解锁</button>
+    <div id="lockErr" class="lock-err"></div>
+  </div>
+
+  <div id="panel" class="panel">
+    <div class="section-label">店铺名称</div>
+    <input id="shopNameInput" class="name-input" type="text">
+
+    <div class="section-label">营业状态</div>
+    <div class="toggle-row">
+      <button id="openBtn" class="on">🟢 营业中</button>
+      <button id="closedBtn" class="off">⚪ 已打烊</button>
+    </div>
+
+    <div class="section-label">当前状态</div>
+    <div class="status-grid">
+      <div class="status-btn idle" data-status="idle"><span class="emoji">🟢</span>空闲</div>
+      <div class="status-btn busy" data-status="busy"><span class="emoji">🟡</span>忙碌</div>
+      <div class="status-btn full" data-status="full"><span class="emoji">🔴</span>客满</div>
+    </div>
+
+    <div class="section-label">等待人数</div>
+    <div class="counter-row">
+      <div id="countNum" class="counter-num">0 人</div>
+      <div class="counter-btns">
+        <button data-delta="-1">−</button>
+        <button data-delta="1">＋</button>
+      </div>
+    </div>
+
+    <div class="section-label">预计等待时间</div>
+    <div class="chip-row">
+      <div class="chip" data-wait="0">不用等</div>
+      <div class="chip" data-wait="15">15 分钟</div>
+      <div class="chip" data-wait="30">30 分钟</div>
+      <div class="chip" data-wait="45">45 分钟+</div>
+    </div>
+
+    <div id="saveNote" class="save-note">点击按钮立即生效</div>
+    <a href="./index.html" class="preview-link">查看顾客端效果 →</a>
+  </div>
+
+</div>
+
+<script>
+  // 换成你部署好的 Cloudflare Worker 地址（跟 index.html 里的要一致）
+  const API_BASE = 'https://barber-status-api.haircutliuzong.workers.dev';
+
+  let state = null;
+  let pin = localStorage.getItem('ownerPin') || '';
+
+  const $ = (sel) => document.querySelector(sel);
+
+  async function tryUnlock(candidatePin, silent){
+    $('#unlockBtn').disabled = true;
+    $('#lockErr').textContent = '';
+    try{
+      const res = await fetch(API_BASE + '/status');
+      const json = await res.json();
+      if(!json.success) throw new Error('fetch failed');
+
+      // 用一次无害的更新请求来验证密码是否正确（updates 传空对象不会改任何字段）
+      const verifyRes = await fetch(API_BASE + '/status', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pin: candidatePin, updates: {} })
+      });
+      const verifyJson = await verifyRes.json();
+
+      if(verifyJson.success){
+        pin = candidatePin;
+        localStorage.setItem('ownerPin', pin);
+        state = verifyJson.data;
+        showPanel();
+      } else {
+        if(!silent) $('#lockErr').textContent = '密码错误，请重试';
+        else localStorage.removeItem('ownerPin');
+      }
+    }catch(e){
+      if(!silent) $('#lockErr').textContent = '网络错误，请重试';
+    }
+    $('#unlockBtn').disabled = false;
+  }
+
+  function showPanel(){
+    $('#lock').style.display = 'none';
+    $('#panel').classList.add('show');
+    syncUI();
+  }
+
+  function syncUI(){
+    $('#shopNameInput').value = state.shopName;
+    $('#openBtn').className = state.isOpen ? 'on active' : 'on';
+    $('#closedBtn').className = !state.isOpen ? 'off active' : 'off';
+    document.querySelectorAll('.status-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.status === state.status);
+    });
+    $('#countNum').textContent = state.waitingCount + ' 人';
+    document.querySelectorAll('.chip').forEach(chip => {
+      chip.classList.toggle('active', parseInt(chip.dataset.wait) === state.waitMinutes);
+    });
+  }
+
+  async function pushUpdate(updates){
+    $('#saveNote').textContent = '保存中...';
+    try{
+      const res = await fetch(API_BASE + '/status', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pin, updates })
+      });
+      const json = await res.json();
+      if(json.success){
+        state = json.data;
+        syncUI();
+        $('#saveNote').textContent = '已更新，顾客端实时同步';
+      } else {
+        $('#saveNote').textContent = '保存失败，请重试';
+      }
+    }catch(e){
+      $('#saveNote').textContent = '网络错误，请重试';
+    }
+  }
+
+  $('#unlockBtn').addEventListener('click', () => tryUnlock($('#pinInput').value.trim(), false));
+  $('#pinInput').addEventListener('keydown', (e) => { if(e.key === 'Enter') tryUnlock($('#pinInput').value.trim(), false); });
+
+  $('#shopNameInput').addEventListener('change', (e) => pushUpdate({ shopName: e.target.value.trim() || '理发店' }));
+  $('#openBtn').addEventListener('click', () => pushUpdate({ isOpen: true }));
+  $('#closedBtn').addEventListener('click', () => pushUpdate({ isOpen: false }));
+  document.querySelectorAll('.status-btn').forEach(btn => {
+    btn.addEventListener('click', () => pushUpdate({ status: btn.dataset.status }));
+  });
+  document.querySelectorAll('[data-delta]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const delta = parseInt(btn.dataset.delta);
+      const next = Math.max(0, state.waitingCount + delta);
+      pushUpdate({ waitingCount: next });
+    });
+  });
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => pushUpdate({ waitMinutes: parseInt(chip.dataset.wait) }));
+  });
+
+  if(pin) tryUnlock(pin, true);
+</script>
+</body>
+</html>
