@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>预约</title>
+<style>
+  :root{
+    --paper:#FBF7F1;
+    --ink:#20242B;
+    --ink-soft:#5B6068;
+    --idle:#3F9142;
+    --idle-bg:#E7F3E6;
+    --full:#C24B3F;
+    --full-bg:#FBE7E3;
+    --brass:#B8874B;
+    --line:#00000012;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue","Microsoft YaHei",sans-serif;
+    background:#E7E2D8;
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:24px 14px 60px;
+  }
+  .app{width:100%;max-width:440px;}
+  .back-link{display:inline-block;font-size:13px;color:var(--ink-soft);text-decoration:none;margin-bottom:14px;}
+
+  .week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .week-nav button{
+    background:var(--paper);border:none;border-radius:10px;
+    width:38px;height:38px;font-size:18px;font-weight:700;color:var(--ink);cursor:pointer;
+    box-shadow:0 4px 14px -8px rgba(0,0,0,.3);
+  }
+  .week-label{font-size:14px;font-weight:700;color:var(--ink-soft);}
+
+  .day-tabs{
+    display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:16px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .day-tab{
+    flex:1 0 auto;min-width:52px;text-align:center;
+    background:var(--paper);border-radius:14px;padding:10px 6px;cursor:pointer;
+    border:2px solid transparent;
+  }
+  .day-tab .dow{font-size:11px;color:var(--ink-soft);font-weight:600;}
+  .day-tab .dom{font-size:18px;font-weight:800;margin-top:2px;}
+  .day-tab.active{border-color:var(--ink);}
+  .day-tab.today .dom{color:var(--brass);}
+  .day-tab.past{opacity:.4;}
+
+  .slot-list{background:var(--paper);border-radius:20px;padding:10px;box-shadow:0 12px 30px -18px rgba(0,0,0,.3);}
+  .slot-row{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 14px;border-radius:14px;margin-bottom:6px;cursor:pointer;
+  }
+  .slot-row:last-child{margin-bottom:0;}
+  .slot-row.available{background:var(--idle-bg);}
+  .slot-row.available:active{background:#d9ebd8;}
+  .slot-row.booked{background:#00000008;cursor:pointer;}
+  .slot-row.past{background:transparent;opacity:.35;cursor:default;}
+  .slot-time{font-size:15px;font-weight:700;}
+  .slot-tag{font-size:12px;font-weight:700;}
+  .slot-row.available .slot-tag{color:var(--idle);}
+  .slot-row.booked .slot-tag{color:var(--ink-soft);}
+  .slot-row.past .slot-tag{color:var(--ink-soft);}
+
+  .empty-note{text-align:center;color:var(--ink-soft);font-size:13px;padding:24px 10px;}
+
+  /* 弹层 */
+  .overlay{
+    position:fixed;inset:0;background:rgba(20,22,26,.5);
+    display:flex;align-items:flex-end;justify-content:center;z-index:50;
+  }
+  .sheet{
+    width:100%;max-width:440px;background:#fff;border-radius:24px 24px 0 0;
+    padding:26px 24px 32px;
+  }
+  .sheet h3{margin:0 0 4px;font-size:19px;}
+  .sheet .sub{font-size:13px;color:var(--ink-soft);margin-bottom:20px;}
+  .field-label{font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;}
+  .field-input{
+    width:100%;border:1.5px solid #00000018;border-radius:12px;
+    padding:14px;font-size:16px;margin-bottom:16px;background:#FAFAF8;
+  }
+  .field-input:focus{outline:2px solid var(--brass);border-color:transparent;}
+  .btn-row{display:flex;gap:10px;margin-top:6px;}
+  .btn{
+    flex:1;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:700;cursor:pointer;
+  }
+  .btn-primary{background:var(--ink);color:#fff;}
+  .btn-primary:disabled{opacity:.5;}
+  .btn-danger{background:var(--full);color:#fff;}
+  .btn-ghost{background:#EDEDEA;color:var(--ink);}
+  .form-err{color:var(--full);font-size:13px;margin:-8px 0 14px;min-height:16px;}
+  .confirm-box{background:var(--idle-bg);border-radius:14px;padding:16px;margin-bottom:16px;}
+  .confirm-box .cb-link{
+    display:block;word-break:break-all;font-size:12px;color:var(--ink-soft);
+    background:#fff;border-radius:8px;padding:10px;margin-top:10px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <a href="./index.html" class="back-link">← 返回状态页</a>
+
+  <div class="week-nav">
+    <button id="prevWeek">‹</button>
+    <div class="week-label" id="weekLabel"></div>
+    <button id="nextWeek">›</button>
+  </div>
+
+  <div class="day-tabs" id="dayTabs"></div>
+
+  <div class="slot-list" id="slotList"></div>
+</div>
+
+<div id="overlayRoot"></div>
+
+<script>
+  const API_BASE = 'https://barber-status-api.haircutliuzong.workers.dev';
+  const OPEN_HOUR = 9, CLOSE_HOUR = 21;
+  const DOW_LABELS = ['周日','周一','周二','周三','周四','周五','周六'];
+
+  let weekOffset = 0;      // 0 = 本周
+  let selectedDate = null; // 'YYYY-MM-DD'
+  let bookingsCache = {};  // date -> [{id,date,time}]
+
+  function pad(n){ return String(n).padStart(2,'0'); }
+  function toDateStr(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+  function todayStr(){ return toDateStr(new Date()); }
+
+  function getWeekDates(offset){
+    const now = new Date();
+    const day = now.getDay(); // 0=周日
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset + offset*7);
+    monday.setHours(0,0,0,0);
+    const dates = [];
+    for(let i=0;i<7;i++){
+      const d = new Date(monday);
+      d.setDate(monday.getDate()+i);
+      dates.push(d);
+    }
+    return dates;
+  }
+
+  function generateSlots(){
+    const slots = [];
+    for(let h=OPEN_HOUR; h<CLOSE_HOUR; h++){
+      slots.push(`${pad(h)}:00`);
+      slots.push(`${pad(h)}:30`);
+    }
+    return slots;
+  }
+  const ALL_SLOTS = generateSlots();
+
+  function renderWeekNav(dates){
+    const first = dates[0], last = dates[6];
+    document.getElementById('weekLabel').textContent =
+      `${first.getMonth()+1}月${first.getDate()}日 - ${last.getMonth()+1}月${last.getDate()}日`;
+  }
+
+  function renderDayTabs(dates){
+    const tabs = document.getElementById('dayTabs');
+    tabs.innerHTML = '';
+    const today = todayStr();
+    dates.forEach(d => {
+      const dateStr = toDateStr(d);
+      const isPast = dateStr < today;
+      const isToday = dateStr === today;
+      const el = document.createElement('div');
+      el.className = 'day-tab' + (dateStr===selectedDate?' active':'') + (isToday?' today':'') + (isPast?' past':'');
+      el.innerHTML = `<div class="dow">${DOW_LABELS[d.getDay()]}</div><div class="dom">${d.getDate()}</div>`;
+      el.addEventListener('click', () => { selectedDate = dateStr; renderDayTabs(dates); loadDaySlots(dateStr); });
+      tabs.appendChild(el);
+    });
+  }
+
+  async function loadDaySlots(dateStr){
+    const list = document.getElementById('slotList');
+    list.innerHTML = '<div class="empty-note">加载中...</div>';
+    try{
+      const res = await fetch(`${API_BASE}/bookings?date=${dateStr}`);
+      const json = await res.json();
+      const taken = json.success ? json.data : [];
+      const takenMap = {};
+      taken.forEach(b => { takenMap[b.time] = b.id; });
+      bookingsCache[dateStr] = takenMap;
+      renderSlotList(dateStr, takenMap);
+    }catch(e){
+      list.innerHTML = '<div class="empty-note">加载失败，下拉刷新重试</div>';
+    }
+  }
+
+  function renderSlotList(dateStr, takenMap){
+    const list = document.getElementById('slotList');
+    const isToday = dateStr === todayStr();
+    const nowMinutes = new Date().getHours()*60 + new Date().getMinutes();
+
+    list.innerHTML = '';
+    ALL_SLOTS.forEach(time => {
+      const [h,m] = time.split(':').map(Number);
+      const slotMinutes = h*60+m;
+      const isPastSlot = dateStr < todayStr() || (isToday && slotMinutes <= nowMinutes);
+      const bookingId = takenMap[time];
+
+      const row = document.createElement('div');
+      if(isPastSlot){
+        row.className = 'slot-row past';
+        row.innerHTML = `<div class="slot-time">${time}</div><div class="slot-tag">已过时</div>`;
+      } else if(bookingId){
+        row.className = 'slot-row booked';
+        row.innerHTML = `<div class="slot-time">${time}</div><div class="slot-tag">已被预约</div>`;
+        row.addEventListener('click', () => openCancelSheet(dateStr, time, bookingId));
+      } else {
+        row.className = 'slot-row available';
+        row.innerHTML = `<div class="slot-time">${time}</div><div class="slot-tag">可预约</div>`;
+        row.addEventListener('click', () => openBookSheet(dateStr, time));
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function closeSheet(){
+    document.getElementById('overlayRoot').innerHTML = '';
+  }
+
+  function openBookSheet(dateStr, time){
+    const root = document.getElementById('overlayRoot');
+    root.innerHTML = `
+      <div class="overlay" id="ov">
+        <div class="sheet">
+          <h3>预约时间</h3>
+          <div class="sub">${dateStr} ${time}（30 分钟）</div>
+          <div class="field-label">姓名</div>
+          <input id="nameInput" class="field-input" type="text" placeholder="怎么称呼你">
+          <div class="field-label">手机号</div>
+          <input id="phoneInput" class="field-input" type="tel" placeholder="04XXXXXXXX" maxlength="10">
+          <div class="form-err" id="formErr"></div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="cancelBtn">取消</button>
+            <button class="btn btn-primary" id="submitBtn">确认预约</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('ov').addEventListener('click', (e) => { if(e.target.id==='ov') closeSheet(); });
+    document.getElementById('cancelBtn').addEventListener('click', closeSheet);
+    document.getElementById('submitBtn').addEventListener('click', () => submitBooking(dateStr, time));
+  }
+
+  async function submitBooking(dateStr, time){
+    const name = document.getElementById('nameInput').value.trim();
+    const phone = document.getElementById('phoneInput').value.trim();
+    const errEl = document.getElementById('formErr');
+    errEl.textContent = '';
+
+    if(!name){ errEl.textContent = '请输入姓名'; return; }
+    if(!/^04\d{8}$/.test(phone)){ errEl.textContent = '请输入正确的手机号（04开头，共10位）'; return; }
+
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
+
+    try{
+      const res = await fetch(`${API_BASE}/bookings`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ date: dateStr, time, name, phone })
+      });
+      const json = await res.json();
+      if(json.success){
+        showBookedConfirmation(dateStr, time, json.id);
+        loadDaySlots(dateStr);
+      } else if(json.error === 'SLOT_TAKEN'){
+        errEl.textContent = '手慢了，这个时间刚被别人订走了';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '确认预约';
+        loadDaySlots(dateStr);
+      } else {
+        errEl.textContent = '提交失败，请重试';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '确认预约';
+      }
+    }catch(e){
+      errEl.textContent = '网络错误，请重试';
+      submitBtn.disabled = false;
+      submitBtn.textContent = '确认预约';
+    }
+  }
+
+  function showBookedConfirmation(dateStr, time, id){
+    const link = `${location.origin}${location.pathname}?cancel=${id}`;
+    const root = document.getElementById('overlayRoot');
+    root.innerHTML = `
+      <div class="overlay" id="ov">
+        <div class="sheet">
+          <h3>✅ 预约成功</h3>
+          <div class="sub">${dateStr} ${time}</div>
+          <div class="confirm-box">
+            以后想取消预约，保存这个链接，点开就能直接取消：
+            <a class="cb-link" href="${link}">${link}</a>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="doneBtn">知道了</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('doneBtn').addEventListener('click', closeSheet);
+  }
+
+  function openCancelSheet(dateStr, time, bookingId){
+    const root = document.getElementById('overlayRoot');
+    root.innerHTML = `
+      <div class="overlay" id="ov">
+        <div class="sheet">
+          <h3>取消预约</h3>
+          <div class="sub">${dateStr} ${time} 已被预约</div>
+          <div class="field-label">如果这是你的预约，输入手机号确认取消</div>
+          <input id="cancelPhoneInput" class="field-input" type="tel" placeholder="04XXXXXXXX" maxlength="10">
+          <div class="form-err" id="cancelErr"></div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" id="closeBtn">先不取消</button>
+            <button class="btn btn-danger" id="confirmCancelBtn">确认取消</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('ov').addEventListener('click', (e) => { if(e.target.id==='ov') closeSheet(); });
+    document.getElementById('closeBtn').addEventListener('click', closeSheet);
+    document.getElementById('confirmCancelBtn').addEventListener('click', async () => {
+      const phone = document.getElementById('cancelPhoneInput').value.trim();
+      const errEl = document.getElementById('cancelErr');
+      if(!/^04\d{8}$/.test(phone)){ errEl.textContent = '请输入正确的手机号'; return; }
+
+      try{
+        const res = await fetch(`${API_BASE}/bookings/cancel-by-phone`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ id: bookingId, phone })
+        });
+        const json = await res.json();
+        if(json.success){
+          closeSheet();
+          loadDaySlots(dateStr);
+        } else if(json.error === 'PHONE_MISMATCH'){
+          errEl.textContent = '手机号不匹配，这可能不是你的预约';
+        } else {
+          errEl.textContent = '取消失败，请重试';
+        }
+      }catch(e){
+        errEl.textContent = '网络错误，请重试';
+      }
+    });
+  }
+
+  async function handleCancelLinkParam(){
+    const params = new URLSearchParams(location.search);
+    const id = params.get('cancel');
+    if(!id) return;
+
+    const root = document.getElementById('overlayRoot');
+    root.innerHTML = `<div class="overlay" id="ov"><div class="sheet"><h3>正在加载预约信息...</h3></div></div>`;
+
+    try{
+      const res = await fetch(`${API_BASE}/bookings/lookup?id=${encodeURIComponent(id)}`);
+      const json = await res.json();
+      if(!json.success){
+        root.innerHTML = `
+          <div class="overlay" id="ov">
+            <div class="sheet">
+              <h3>找不到这条预约</h3>
+              <div class="sub">可能已经被取消过了</div>
+              <div class="btn-row"><button class="btn btn-primary" id="closeBtn2">关闭</button></div>
+            </div>
+          </div>`;
+        document.getElementById('closeBtn2').addEventListener('click', () => { closeSheet(); cleanUrl(); });
+        return;
+      }
+      const { date, time, name } = json.data;
+      root.innerHTML = `
+        <div class="overlay" id="ov">
+          <div class="sheet">
+            <h3>取消预约</h3>
+            <div class="sub">${name} · ${date} ${time}</div>
+            <div class="btn-row">
+              <button class="btn btn-ghost" id="keepBtn">保留预约</button>
+              <button class="btn btn-danger" id="doCancelBtn">确认取消</button>
+            </div>
+          </div>
+        </div>`;
+      document.getElementById('keepBtn').addEventListener('click', () => { closeSheet(); cleanUrl(); });
+      document.getElementById('doCancelBtn').addEventListener('click', async () => {
+        try{
+          const cancelRes = await fetch(`${API_BASE}/bookings/cancel-by-link`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ id })
+          });
+          const cancelJson = await cancelRes.json();
+          if(cancelJson.success){
+            root.innerHTML = `
+              <div class="overlay" id="ov">
+                <div class="sheet">
+                  <h3>已取消</h3>
+                  <div class="sub">这个时间段已经空出来了</div>
+                  <div class="btn-row"><button class="btn btn-primary" id="doneBtn2">关闭</button></div>
+                </div>
+              </div>`;
+            document.getElementById('doneBtn2').addEventListener('click', () => {
+              closeSheet(); cleanUrl();
+              if(selectedDate) loadDaySlots(selectedDate);
+            });
+          }
+        }catch(e){}
+      });
+    }catch(e){
+      closeSheet();
+    }
+  }
+
+  function cleanUrl(){
+    const url = new URL(location.href);
+    url.searchParams.delete('cancel');
+    history.replaceState({}, '', url.toString());
+  }
+
+  function init(){
+    const dates = getWeekDates(weekOffset);
+    renderWeekNav(dates);
+    selectedDate = toDateStr(dates.find(d => toDateStr(d) >= todayStr()) || dates[0]);
+    renderDayTabs(dates);
+    loadDaySlots(selectedDate);
+    handleCancelLinkParam();
+  }
+
+  document.getElementById('prevWeek').addEventListener('click', () => {
+    weekOffset -= 1;
+    const dates = getWeekDates(weekOffset);
+    renderWeekNav(dates);
+    selectedDate = toDateStr(dates[0]);
+    renderDayTabs(dates);
+    loadDaySlots(selectedDate);
+  });
+  document.getElementById('nextWeek').addEventListener('click', () => {
+    weekOffset += 1;
+    const dates = getWeekDates(weekOffset);
+    renderWeekNav(dates);
+    selectedDate = toDateStr(dates[0]);
+    renderDayTabs(dates);
+    loadDaySlots(selectedDate);
+  });
+
+  init();
+</script>
+</body>
+</html>
