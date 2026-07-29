@@ -92,6 +92,13 @@
     color:#D6D9DE;padding:11px 0;border-radius:10px;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center;
   }
   .chip.active{background:var(--brass);border-color:var(--brass);color:#fff;}
+  .weekday-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+  .weekday-btn{
+    border:1.5px solid var(--panel-line);background:var(--panel-2);color:#D6D9DE;
+    border-radius:10px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;text-align:center;
+  }
+  .weekday-btn.closed{background:var(--full);border-color:var(--full);color:#fff;}
+  .weekday-hint{font-size:11.5px;color:#7A8290;margin-top:10px;text-align:center;}
   .save-note{margin-top:20px;font-size:12px;color:#7A8290;text-align:center;}
   .preview-link{display:block;text-align:center;margin-top:16px;font-size:12px;color:#B7BCC5;}
 
@@ -164,6 +171,18 @@
       <div class="chip" data-wait="45">45 分钟+</div>
     </div>
 
+    <div class="section-label">每周固定休息日（影响预约日历）</div>
+    <div class="weekday-grid" id="weekdayGrid">
+      <div class="weekday-btn" data-day="1">一</div>
+      <div class="weekday-btn" data-day="2">二</div>
+      <div class="weekday-btn" data-day="3">三</div>
+      <div class="weekday-btn" data-day="4">四</div>
+      <div class="weekday-btn" data-day="5">五</div>
+      <div class="weekday-btn" data-day="6">六</div>
+      <div class="weekday-btn" data-day="0">日</div>
+    </div>
+    <div class="weekday-hint">红色 = 这天不营业，顾客预约日历会自动隐藏</div>
+
     <div id="saveNote" class="save-note">点击按钮立即生效</div>
     <a href="./index.html" class="preview-link">查看顾客端效果 →</a>
   </div>
@@ -181,6 +200,7 @@
 
   let state = null;
   let pin = localStorage.getItem('ownerPin') || '';
+  let closedWeekdays = [];
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -215,7 +235,49 @@
     $('#tabs').classList.add('show');
     $('#panel').classList.add('show');
     syncUI();
+    loadSchedule();
   }
+
+  async function loadSchedule(){
+    try{
+      const res = await fetch(API_BASE + '/schedule');
+      const json = await res.json();
+      if(json.success){
+        closedWeekdays = json.data.closedWeekdays || [];
+        syncWeekdayUI();
+      }
+    }catch(e){}
+  }
+
+  function syncWeekdayUI(){
+    document.querySelectorAll('.weekday-btn').forEach(btn => {
+      const day = parseInt(btn.dataset.day);
+      btn.classList.toggle('closed', closedWeekdays.includes(day));
+    });
+  }
+
+  async function toggleWeekday(day){
+    const next = closedWeekdays.includes(day)
+      ? closedWeekdays.filter(d => d !== day)
+      : [...closedWeekdays, day];
+
+    try{
+      const res = await fetch(API_BASE + '/schedule', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pin, closedWeekdays: next })
+      });
+      const json = await res.json();
+      if(json.success){
+        closedWeekdays = json.data.closedWeekdays;
+        syncWeekdayUI();
+      }
+    }catch(e){}
+  }
+
+  document.querySelectorAll('.weekday-btn').forEach(btn => {
+    btn.addEventListener('click', () => toggleWeekday(parseInt(btn.dataset.day)));
+  });
 
   function syncUI(){
     $('#shopNameInput').value = state.shopName;
