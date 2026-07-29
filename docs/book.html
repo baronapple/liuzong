@@ -52,6 +52,8 @@
   .day-tab.active{border-color:var(--ink);}
   .day-tab.today .dom{color:var(--brass);}
   .day-tab.past{opacity:.4;}
+  .day-tab.closed-day{opacity:.5;}
+  .day-tab.closed-day .dom{color:var(--full);}
 
   .slot-list{background:var(--paper);border-radius:20px;padding:10px;box-shadow:0 12px 30px -18px rgba(0,0,0,.3);}
   .slot-row{
@@ -122,13 +124,24 @@
 <div id="overlayRoot"></div>
 
 <script>
-  const API_BASE = 'https://barber-status-api.haircutliuzong.workers.dev';
+  const API_BASE = 'https://barber-status-api.YOUR-SUBDOMAIN.workers.dev';
   const OPEN_HOUR = 9, CLOSE_HOUR = 21;
   const DOW_LABELS = ['周日','周一','周二','周三','周四','周五','周六'];
 
   let weekOffset = 0;      // 0 = 本周
   let selectedDate = null; // 'YYYY-MM-DD'
   let bookingsCache = {};  // date -> [{id,date,time}]
+  let closedWeekdays = []; // [2,4] 之类，0=周日...6=周六
+
+  async function loadSchedule(){
+    try{
+      const res = await fetch(`${API_BASE}/schedule`);
+      const json = await res.json();
+      if(json.success) closedWeekdays = json.data.closedWeekdays || [];
+    }catch(e){
+      closedWeekdays = [];
+    }
+  }
 
   function pad(n){ return String(n).padStart(2,'0'); }
   function toDateStr(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
@@ -174,9 +187,10 @@
       const dateStr = toDateStr(d);
       const isPast = dateStr < today;
       const isToday = dateStr === today;
+      const isClosedDay = closedWeekdays.includes(d.getDay());
       const el = document.createElement('div');
-      el.className = 'day-tab' + (dateStr===selectedDate?' active':'') + (isToday?' today':'') + (isPast?' past':'');
-      el.innerHTML = `<div class="dow">${DOW_LABELS[d.getDay()]}</div><div class="dom">${d.getDate()}</div>`;
+      el.className = 'day-tab' + (dateStr===selectedDate?' active':'') + (isToday?' today':'') + (isPast?' past':'') + (isClosedDay?' closed-day':'');
+      el.innerHTML = `<div class="dow">${isClosedDay?'休':DOW_LABELS[d.getDay()]}</div><div class="dom">${d.getDate()}</div>`;
       el.addEventListener('click', () => { selectedDate = dateStr; renderDayTabs(dates); loadDaySlots(dateStr); });
       tabs.appendChild(el);
     });
@@ -184,6 +198,13 @@
 
   async function loadDaySlots(dateStr){
     const list = document.getElementById('slotList');
+
+    const weekday = new Date(dateStr + 'T00:00:00').getDay();
+    if(closedWeekdays.includes(weekday)){
+      list.innerHTML = '<div class="empty-note">这一天不营业，换个日子看看吧</div>';
+      return;
+    }
+
     list.innerHTML = '<div class="empty-note">加载中...</div>';
     try{
       const res = await fetch(`${API_BASE}/bookings?date=${dateStr}`);
@@ -282,6 +303,10 @@
         submitBtn.disabled = false;
         submitBtn.textContent = '确认预约';
         loadDaySlots(dateStr);
+      } else if(json.error === 'DAY_CLOSED'){
+        errEl.textContent = '这一天不营业，请选择其他日期';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '确认预约';
       } else {
         errEl.textContent = '提交失败，请重试';
         submitBtn.disabled = false;
@@ -429,7 +454,8 @@
     history.replaceState({}, '', url.toString());
   }
 
-  function init(){
+  async function init(){
+    await loadSchedule();
     const dates = getWeekDates(weekOffset);
     renderWeekNav(dates);
     selectedDate = toDateStr(dates.find(d => toDateStr(d) >= todayStr()) || dates[0]);
