@@ -94,22 +94,22 @@
   const API_BASE = 'https://barber-status-api.haircutliuzong.workers.dev';
 
   const STATUS_LABEL = {
-    idle: '空闲，可直接来',
-    busy: '有点忙，建议预留时间',
-    full: '客满，暂不建议现在来'
+    idle: '空闲，可直接来 · Free, walk in',
+    busy: '有点忙，建议预留时间 · Busy, expect a wait',
+    full: '客满，暂不建议现在来 · Full, please come later'
   };
 
   function timeAgo(ts){
     const diff = Math.max(0, Date.now() - ts);
     const min = Math.floor(diff/60000);
-    if(min < 1) return '刚刚更新';
-    if(min < 60) return min + ' 分钟前更新';
-    return Math.floor(min/60) + ' 小时前更新';
+    if(min < 1) return '刚刚更新 · Just now';
+    if(min < 60) return min + ' 分钟前更新 · ' + min + ' min ago';
+    return  Math.floor(min/60) + ' 小时前更新 · ' + Math.floor(min/60) + ' hr ago';
   }
 
   function render(state){
     const eff = state.isOpen ? state.status : 'closed';
-    const label = state.isOpen ? STATUS_LABEL[state.status] : '今日已打烊';
+    const label = state.isOpen ? STATUS_LABEL[state.status] : '今日已打烊 Closed today';
     document.getElementById('card').innerHTML = `
       <div class="pole"></div>
       <div class="shop-row">
@@ -125,16 +125,16 @@
       </div>
       <div class="stats">
         <div class="stat-box">
-          <div class="stat-label">等待人数</div>
+          <div class="stat-label">等待人数 Waiting</div>
           <div class="stat-value">${state.isOpen ? state.waitingCount : '—'}${state.isOpen ? '<small>人</small>' : ''}</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">预计等待</div>
+          <div class="stat-label">预计等待 Est. wait</div>
           <div class="stat-value">${state.isOpen ? state.waitMinutes : '—'}${state.isOpen ? '<small>分钟</small>' : ''}</div>
         </div>
       </div>
       <div class="updated-row"><span class="live-dot"></span><span id="timeAgo">${timeAgo(state.lastUpdated)}</span></div>
-      <a href="./book.html" class="book-btn">📅 预约时间 →</a>
+      <a href="./book.html" class="book-btn">📅 预约时间 Book a time →</a>
     `;
     window._lastUpdated = state.lastUpdated;
   }
