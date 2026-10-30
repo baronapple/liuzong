@@ -181,7 +181,7 @@
       <div class="weekday-btn" data-day="6">六</div>
       <div class="weekday-btn" data-day="0">日</div>
     </div>
-    <div class="weekday-hint">红色 = 这天不营业，顾客预约日历会自动隐藏</div>
+    <div class="weekday-hint" id="weekdayHint">红色 = 这天不营业，顾客预约日历会自动隐藏</div>
 
     <div id="saveNote" class="save-note">点击按钮立即生效</div>
     <a href="./index.html" class="preview-link">查看顾客端效果 →</a>
@@ -239,14 +239,23 @@
   }
 
   async function loadSchedule(){
+    const hint = document.getElementById('weekdayHint');
     try{
       const res = await fetch(API_BASE + '/schedule');
+      if(res.status === 404){
+        hint.textContent = '⚠️ 后端还没有休息日功能，请先重新部署 worker.js（wrangler deploy）';
+        hint.style.color = '#C24B3F';
+        return;
+      }
       const json = await res.json();
       if(json.success){
         closedWeekdays = json.data.closedWeekdays || [];
         syncWeekdayUI();
       }
-    }catch(e){}
+    }catch(e){
+      hint.textContent = '⚠️ 网络错误，无法加载休息日设置';
+      hint.style.color = '#C24B3F';
+    }
   }
 
   function syncWeekdayUI(){
@@ -261,18 +270,40 @@
       ? closedWeekdays.filter(d => d !== day)
       : [...closedWeekdays, day];
 
+    const hint = document.getElementById('weekdayHint');
+    hint.textContent = '保存中...';
+    hint.style.color = '#7A8290';
+
     try{
       const res = await fetch(API_BASE + '/schedule', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ pin, closedWeekdays: next })
       });
+
+      if(res.status === 404){
+        hint.textContent = '⚠️ 后端还没有休息日功能，请先重新部署 worker.js（wrangler deploy）';
+        hint.style.color = '#C24B3F';
+        return;
+      }
+
       const json = await res.json();
       if(json.success){
         closedWeekdays = json.data.closedWeekdays;
         syncWeekdayUI();
+        hint.textContent = '已更新，顾客端立即生效';
+        hint.style.color = '#7A8290';
+      } else if(json.error === 'PIN_INCORRECT'){
+        hint.textContent = '⚠️ 密码校验失败，请重新登录老板端';
+        hint.style.color = '#C24B3F';
+      } else {
+        hint.textContent = '⚠️ 保存失败：' + (json.error || '未知错误');
+        hint.style.color = '#C24B3F';
       }
-    }catch(e){}
+    }catch(e){
+      hint.textContent = '⚠️ 网络错误，请检查 API_BASE 地址是否正确';
+      hint.style.color = '#C24B3F';
+    }
   }
 
   document.querySelectorAll('.weekday-btn').forEach(btn => {
@@ -369,7 +400,7 @@
       const upcoming = json.data.filter(b => b.date >= todayStr);
 
       if(upcoming.length === 0){
-        list.innerHTML = '<div class="bookings-empty">暂时没有预约</div>';
+        list.innerHTML = '<div class="bookings-empty">暂时没有预约（顾客预约是匿名的，这里只显示时间）</div>';
         return;
       }
       list.innerHTML = '';
@@ -378,9 +409,8 @@
         item.className = 'booking-item';
         item.innerHTML = `
           <div class="booking-info">
-            <div class="bi-date">${b.date} ${b.time}</div>
-            <div class="bi-name">${escapeHtml(b.name)}</div>
-            <div class="bi-phone">${escapeHtml(b.phone)}</div>
+            <div class="bi-date">${b.date} ${weekdayLabel(b.date)}</div>
+            <div class="bi-name">${escapeHtml(b.time)}</div>
           </div>
           <button class="cancel-item-btn" data-id="${b.id}">取消</button>
         `;
@@ -404,6 +434,11 @@
       const json = await res.json();
       if(json.success) loadBookings();
     }catch(e){}
+  }
+
+  function weekdayLabel(dateStr){
+    const labels = ['周日','周一','周二','周三','周四','周五','周六'];
+    return labels[new Date(dateStr + 'T00:00:00').getDay()];
   }
 
   function escapeHtml(str){

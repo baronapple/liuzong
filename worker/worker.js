@@ -5,14 +5,16 @@
  *   GET  /status                    → 顾客端读取当前状态
  *   POST /status                    → 老板端更新状态（需要 pin）
  *
- * === 预约接口 ===
- *   GET  /bookings?date=YYYY-MM-DD  → 读取某一天已被占用的时间段（不含姓名手机号，公开安全）
- *   POST /bookings                  → 顾客新建预约 { date, time, name, phone }
- *   GET  /bookings/lookup?id=xxx    → 用预约id查看这条预约的信息（取消链接用）
- *   POST /bookings/cancel-by-link   → 凭id直接取消（专属链接用，不需要手机号）{ id }
- *   POST /bookings/cancel-by-phone  → 在日历上点击已订格子取消，需验证手机号 { id, phone }
- *   POST /bookings/owner-list       → 老板端查看所有预约（含姓名手机号）{ pin }
+ * === 预约接口（匿名，不收集姓名/手机号）===
+ *   GET  /bookings?date=YYYY-MM-DD  → 读取某天已被占用的时间（只返回 date/time，不返回 id）
+ *   POST /bookings                  → 预约一个时间段 { date, time, deviceId } → 返回 { id }
+ *   POST /bookings/cancel           → 取消预约 { id }（id 是预约时只给预约者的秘密凭证）
+ *   POST /bookings/owner-list       → 老板端查看所有预约 { pin }
  *   POST /bookings/owner-cancel     → 老板端直接取消 { pin, id }
+ *
+ * === 休息日设置接口 ===
+ *   GET  /schedule                  → 公开读取每周固定休息日 { closedWeekdays: [2,4] }（0=周日...6=周六）
+ *   POST /schedule                  → 老板端更新休息日 { pin, closedWeekdays: [2,4] }
  *
  * 需要绑定一个 KV 命名空间，变量名叫 STATUS_KV
  * 需要设置一个密钥环境变量 OWNER_PIN（老板端密码）
@@ -29,15 +31,23 @@ const DEFAULT_STATE = {
 
 const ALLOWED_STATUS_FIELDS = ['shopName', 'isOpen', 'status', 'waitingCount', 'waitMinutes'];
 
-// 营业时间 9:00 - 21:00，每 30 分钟一格，最后一格 20:30 开始（21:00 结束）
+// 默认每周休息日：周二、周四（JS 的 Date.getDay() 规则：0=周日 1=周一 ... 6=周六）
+const DEFAULT_SCHEDULE = { closedWeekdays: [2, 4] };
+
+// 营业时间 9:00 - 21:00，每 20 分钟一格（每小时 3 格），最后一格 20:40 开始（21:00 结束）
 const OPEN_HOUR = 9;
 const CLOSE_HOUR = 21;
+const SLOT_MINUTES = [0, 20, 40];
+
+// 同一台设备同时最多持有几个未过期预约（防止有人恶意把整天占满）
+const MAX_ACTIVE_PER_DEVICE = 3;
 
 function generateValidSlots() {
   const slots = [];
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-    slots.push(`${String(h).padStart(2, '0')}:00`);
-    slots.push(`${String(h).padStart(2, '0')}:30`);
+    SLOT_MINUTES.forEach((m) => {
+      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    });
   }
   return slots;
 }
@@ -57,16 +67,16 @@ function json(data, status = 200) {
   }));
 }
 
-function isValidPhone(phone) {
-  return typeof phone === 'string' && /^04\d{8}$/.test(phone.trim());
-}
-
 function isValidDate(dateStr) {
   return typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr);
 }
 
 function isValidTime(timeStr) {
   return VALID_SLOTS.includes(timeStr);
+}
+
+function dateStrDaysAgo(days) {
+  return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 }
 
 export default {
@@ -85,11 +95,13 @@ export default {
     // ---- 预约接口 ----
     if (path === '/bookings' && request.method === 'GET') return handleBookingsGet(url, env);
     if (path === '/bookings' && request.method === 'POST') return handleBookingsCreate(request, env);
-    if (path === '/bookings/lookup' && request.method === 'GET') return handleBookingsLookup(url, env);
-    if (path === '/bookings/cancel-by-link' && request.method === 'POST') return handleCancelByLink(request, env);
-    if (path === '/bookings/cancel-by-phone' && request.method === 'POST') return handleCancelByPhone(request, env);
+    if (path === '/bookings/cancel' && request.method === 'POST') return handleCancel(request, env);
     if (path === '/bookings/owner-list' && request.method === 'POST') return handleOwnerList(request, env);
     if (path === '/bookings/owner-cancel' && request.method === 'POST') return handleOwnerCancel(request, env);
+
+    // ---- 休息日设置接口 ----
+    if (path === '/schedule' && request.method === 'GET') return handleScheduleGet(env);
+    if (path === '/schedule' && request.method === 'POST') return handleSchedulePost(request, env);
 
     return json({ error: 'NOT_FOUND' }, 404);
   }
@@ -140,39 +152,52 @@ async function saveBookings(env, bookings) {
   await env.STATUS_KV.put('bookings', JSON.stringify(bookings));
 }
 
-// 公开接口：只返回时间段是否被占用，不返回姓名手机号
+// 公开接口：只告诉大家"哪些时间被占了"，不返回 id，别人没法冒充取消
 async function handleBookingsGet(url, env) {
   const date = url.searchParams.get('date');
   const bookings = await getBookings(env);
   const filtered = date ? bookings.filter(b => b.date === date) : bookings;
-  const publicSafe = filtered.map(b => ({ id: b.id, date: b.date, time: b.time }));
-  return json({ success: true, data: publicSafe });
+  return json({ success: true, data: filtered.map(b => ({ date: b.date, time: b.time })) });
 }
 
 async function handleBookingsCreate(request, env) {
   let body;
   try { body = await request.json(); } catch (e) { return json({ success: false, error: 'INVALID_BODY' }, 400); }
 
-  const { date, time, name, phone } = body;
-  const trimmedName = (name || '').trim();
+  const { date, time, deviceId } = body;
 
   if (!isValidDate(date)) return json({ success: false, error: 'INVALID_DATE' }, 400);
   if (!isValidTime(time)) return json({ success: false, error: 'INVALID_TIME' }, 400);
-  if (!trimmedName) return json({ success: false, error: 'NAME_REQUIRED' }, 400);
-  if (trimmedName.length > 40) return json({ success: false, error: 'NAME_TOO_LONG' }, 400);
-  if (!isValidPhone(phone)) return json({ success: false, error: 'INVALID_PHONE' }, 400);
+  if (typeof deviceId !== 'string' || deviceId.length < 8 || deviceId.length > 64) {
+    return json({ success: false, error: 'INVALID_DEVICE' }, 400);
+  }
 
-  const bookings = await getBookings(env);
+  const scheduleRaw = await env.STATUS_KV.get('schedule');
+  const schedule = scheduleRaw ? JSON.parse(scheduleRaw) : DEFAULT_SCHEDULE;
+  const weekday = new Date(date + 'T00:00:00').getDay();
+  if (schedule.closedWeekdays.includes(weekday)) {
+    return json({ success: false, error: 'DAY_CLOSED' }, 400);
+  }
 
-  const clash = bookings.find(b => b.date === date && b.time === time);
-  if (clash) return json({ success: false, error: 'SLOT_TAKEN' }, 409);
+  // 顺手清理 14 天前的旧预约，避免数据一直变大
+  const keepFrom = dateStrDaysAgo(14);
+  const bookings = (await getBookings(env)).filter(b => b.date >= keepFrom);
+
+  if (bookings.some(b => b.date === date && b.time === time)) {
+    return json({ success: false, error: 'SLOT_TAKEN' }, 409);
+  }
+
+  const activeCutoff = dateStrDaysAgo(1);
+  const mine = bookings.filter(b => b.deviceId === deviceId && b.date >= activeCutoff);
+  if (mine.length >= MAX_ACTIVE_PER_DEVICE) {
+    return json({ success: false, error: 'TOO_MANY_BOOKINGS', max: MAX_ACTIVE_PER_DEVICE }, 429);
+  }
 
   const booking = {
     id: crypto.randomUUID(),
     date,
     time,
-    name: trimmedName,
-    phone: phone.trim(),
+    deviceId,
     createdAt: Date.now()
   };
   bookings.push(booking);
@@ -181,18 +206,8 @@ async function handleBookingsCreate(request, env) {
   return json({ success: true, id: booking.id });
 }
 
-async function handleBookingsLookup(url, env) {
-  const id = url.searchParams.get('id');
-  if (!id) return json({ success: false, error: 'ID_REQUIRED' }, 400);
-
-  const bookings = await getBookings(env);
-  const booking = bookings.find(b => b.id === id);
-  if (!booking) return json({ success: false, error: 'NOT_FOUND' }, 404);
-
-  return json({ success: true, data: { date: booking.date, time: booking.time, name: booking.name } });
-}
-
-async function handleCancelByLink(request, env) {
+// 取消：凭 id（只有预约者的设备知道）
+async function handleCancel(request, env) {
   let body;
   try { body = await request.json(); } catch (e) { return json({ success: false, error: 'INVALID_BODY' }, 400); }
 
@@ -207,26 +222,6 @@ async function handleCancelByLink(request, env) {
   return json({ success: true });
 }
 
-async function handleCancelByPhone(request, env) {
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ success: false, error: 'INVALID_BODY' }, 400); }
-
-  const { id, phone } = body;
-  if (!id || !phone) return json({ success: false, error: 'MISSING_FIELDS' }, 400);
-
-  const bookings = await getBookings(env);
-  const target = bookings.find(b => b.id === id);
-  if (!target) return json({ success: false, error: 'NOT_FOUND' }, 404);
-
-  if (target.phone !== phone.trim()) {
-    return json({ success: false, error: 'PHONE_MISMATCH' }, 401);
-  }
-
-  const next = bookings.filter(b => b.id !== id);
-  await saveBookings(env, next);
-  return json({ success: true });
-}
-
 async function handleOwnerList(request, env) {
   let body;
   try { body = await request.json(); } catch (e) { return json({ success: false, error: 'INVALID_BODY' }, 400); }
@@ -237,7 +232,9 @@ async function handleOwnerList(request, env) {
   }
 
   const bookings = await getBookings(env);
-  const sorted = [...bookings].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const sorted = [...bookings]
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+    .map(b => ({ id: b.id, date: b.date, time: b.time }));
   return json({ success: true, data: sorted });
 }
 
@@ -257,4 +254,30 @@ async function handleOwnerCancel(request, env) {
 
   await saveBookings(env, next);
   return json({ success: true });
+}
+
+/* ============ 休息日设置 ============ */
+
+async function handleScheduleGet(env) {
+  const raw = await env.STATUS_KV.get('schedule');
+  const schedule = raw ? JSON.parse(raw) : DEFAULT_SCHEDULE;
+  if (!raw) await env.STATUS_KV.put('schedule', JSON.stringify(DEFAULT_SCHEDULE));
+  return json({ success: true, data: schedule });
+}
+
+async function handleSchedulePost(request, env) {
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ success: false, error: 'INVALID_BODY' }, 400); }
+
+  const { pin, closedWeekdays } = body;
+  if (!pin || String(pin) !== String(env.OWNER_PIN)) {
+    return json({ success: false, error: 'PIN_INCORRECT' }, 401);
+  }
+  if (!Array.isArray(closedWeekdays) || !closedWeekdays.every(d => Number.isInteger(d) && d >= 0 && d <= 6)) {
+    return json({ success: false, error: 'INVALID_WEEKDAYS' }, 400);
+  }
+
+  const schedule = { closedWeekdays: [...new Set(closedWeekdays)].sort() };
+  await env.STATUS_KV.put('schedule', JSON.stringify(schedule));
+  return json({ success: true, data: schedule });
 }
