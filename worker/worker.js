@@ -35,8 +35,8 @@ const ALLOWED_STATUS_FIELDS = ['shopName', 'isOpen', 'status', 'waitingCount', '
 const DEFAULT_SCHEDULE = { closedWeekdays: [2, 4] };
 
 // 营业时间 9:00 - 21:00，每 20 分钟一格（每小时 3 格），最后一格 20:40 开始（21:00 结束）
-const OPEN_HOUR = 9;
-const CLOSE_HOUR = 21;
+const OPEN_HOUR = 10;
+const CLOSE_HOUR = 19;
 const SLOT_MINUTES = [0, 20, 40];
 
 // 同一台设备同时最多持有几个未过期预约（防止有人恶意把整天占满）
