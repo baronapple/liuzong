@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>预约</title>
+<title>预约 Booking</title>
 <style>
   :root{
     --paper:#FBF7F1;
@@ -279,15 +279,15 @@
           chip.innerHTML = time;
         } else if(isTaken && mine){
           chip.className = 'chip mine';
-          chip.innerHTML = `${time}<small>我的 · 点击取消</small>`;
+          chip.innerHTML = `${time}<small>我的 · 点击取消 cancel my booking</small>`;
           chip.addEventListener('click', () => cancelMine(dateStr, time, mine.id, chip));
         } else if(isTaken){
           chip.className = 'chip taken';
-          chip.innerHTML = `${time}<small>已被约</small>`;
+          chip.innerHTML = `${time}<small>已被约 Not Available</small>`;
           chip.addEventListener('click', () => toast('这个时间已被预约'));
         } else {
           chip.className = 'chip free';
-          chip.innerHTML = `${time}<small>点击预约</small>`;
+          chip.innerHTML = `${time}<small>点击预约 book</small>`;
           chip.addEventListener('click', () => bookSlot(dateStr, time, chip));
         }
         row.appendChild(chip);
