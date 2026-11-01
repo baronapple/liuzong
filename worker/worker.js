@@ -19,6 +19,17 @@
  * 需要绑定一个 KV 命名空间，变量名叫 STATUS_KV
  * 需要设置一个密钥环境变量 OWNER_PIN（老板端密码）
  */
+// 店铺所在时区，按实际所在地修改（布里斯班是 Australia/Brisbane，悉尼/墨尔本是 Australia/Sydney）
+const SHOP_TZ = 'Australia/Brisbane';
+
+function nowInShop() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHOP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
+  const g = (t) => parts.find((p) => p.type === t).value;
+  return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}:${g('minute')}`;
+}
 
 const DEFAULT_STATE = {
   shopName: '理发店',
@@ -40,7 +51,7 @@ const CLOSE_HOUR = 19;
 const SLOT_MINUTES = [0, 20, 40];
 
 // 同一台设备同时最多持有几个未过期预约（防止有人恶意把整天占满）
-const MAX_ACTIVE_PER_DEVICE = 3;
+const MAX_ACTIVE_PER_DEVICE = 300;
 
 function generateValidSlots() {
   const slots = [];
@@ -187,11 +198,14 @@ async function handleBookingsCreate(request, env) {
     return json({ success: false, error: 'SLOT_TAKEN' }, 409);
   }
 
-  const activeCutoff = dateStrDaysAgo(1);
-  const mine = bookings.filter(b => b.deviceId === deviceId && b.date >= activeCutoff);
-  if (mine.length >= MAX_ACTIVE_PER_DEVICE) {
-    return json({ success: false, error: 'TOO_MANY_BOOKINGS', max: MAX_ACTIVE_PER_DEVICE }, 429);
-  }
+  // const activeCutoff = dateStrDaysAgo(1);
+  // const mine = bookings.filter(b => b.deviceId === deviceId && b.date >= activeCutoff);
+  // if (mine.length >= MAX_ACTIVE_PER_DEVICE) {
+  //   return json({ success: false, error: 'TOO_MANY_BOOKINGS', max: MAX_ACTIVE_PER_DEVICE }, 429);
+  // }
+
+  const now = nowInShop();
+  const mine = bookings.filter(b => b.deviceId === deviceId && `${b.date} ${b.time}` > now);
 
   const booking = {
     id: crypto.randomUUID(),
