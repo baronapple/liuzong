@@ -26,6 +26,17 @@
     padding:24px 14px 80px;
   }
   .app{width:100%;max-width:440px;}
+
+  .shop-info{
+  background:var(--paper);border-radius:16px;padding:16px 18px;margin-bottom:16px;
+  box-shadow:0 8px 24px -16px rgba(0,0,0,.3);
+  }
+  .shop-info .si-name{font-size:19px;font-weight:800;}
+  .shop-info .si-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;margin-top:8px;line-height:1.5;}
+  .shop-info a{color:var(--ink);text-decoration:none;}
+  .shop-info .si-phone a{color:var(--brass);font-weight:700;}
+
+
   .back-link{display:inline-block;font-size:13px;color:var(--ink-soft);text-decoration:none;margin-bottom:14px;}
 
   .week-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
@@ -97,6 +108,16 @@
 <body>
 <div class="app">
 
+  <div class="shop-info">
+    <div class="si-name">ABC Barber</div>
+    <div class="si-row">
+      📍 <a href="https://www.google.com/maps/search/?api=1&query=123+Example+St+Brisbane+QLD+4000" target="_blank">123 Example St, Brisbane QLD 4000</a>
+    </div>
+    <div class="si-row si-phone">
+      📞 <a href="tel:0412345678">0412 345 678</a>
+    </div>
+  </div>
+  
   <div class="week-nav">
     <button id="prevWeek">‹</button>
     <div class="week-label" id="weekLabel"></div>
