@@ -35,7 +35,19 @@
   .shop-info .si-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;margin-top:8px;line-height:1.5;}
   .shop-info a{color:var(--ink);text-decoration:none;}
   .shop-info .si-phone a{color:var(--brass);font-weight:700;}
-  .shop-info .si-photo{width:100%;border-radius:12px;margin-top:12px;display:block;}
+  .shop-info{display:flex;align-items:flex-start;gap:14px;}
+  .shop-info .si-text{flex:1;min-width:0;}
+  .shop-info .si-row{word-break:break-word;}
+  .si-photo-wrap{flex:0 0 108px;text-align:center;cursor:zoom-in;-webkit-tap-highlight-color:transparent;}
+  .si-photo{width:108px;height:108px;object-fit:cover;border-radius:12px;display:block;}
+  .si-photo-hint{font-size:10.5px;color:var(--ink-soft);margin-top:5px;line-height:1.3;}
+
+  .lightbox{
+    position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(20,22,26,.9);z-index:200;
+    align-items:center;justify-content:center;padding:16px;
+  }
+  .lightbox img{max-width:100%;max-height:100%;border-radius:12px;}
+  .lightbox .lb-close{position:absolute;top:12px;right:18px;color:#fff;font-size:36px;line-height:1;}
 
 
   .back-link{display:inline-block;font-size:13px;color:var(--ink-soft);text-decoration:none;margin-bottom:14px;}
@@ -110,6 +122,7 @@
 <div class="app">
 
   <div class="shop-info">
+    <div class="si-text">
     <div class="si-name" id="siName">$10 Hair cut</div>
     <div class="si-row" id="siAddrRow">
       📍 <a id="siAddr" href="https://www.google.com/maps/search/?api=1&query=12+Becker+St+Sunnybank+QLD+4109" target="_blank">12 Becker Street, Sunnybank QLD 4109</a>
@@ -117,7 +130,11 @@
     <div class="si-row si-phone" id="siPhoneRow">
       📞 <a id="siPhone" href="tel:0452661111">0452 661 111</a>
     </div>
-    <img id="siPhoto" class="si-photo" style="display:none" alt="">
+    </div>
+    <div class="si-photo-wrap" id="siPhotoWrap" style="display:none">
+      <img id="siPhoto" class="si-photo" alt="">
+      <div class="si-photo-hint">点击放大<br>Tap to enlarge</div>
+    </div>
   </div>
 
   <div class="week-nav">
@@ -138,6 +155,8 @@
 
   <div class="slot-list" id="slotList"></div>
 </div>
+
+<div class="lightbox" id="lightbox" style="display:none"><img id="lightboxImg" alt=""><div class="lb-close">×</div></div>
 
 <div class="toast" id="toast"></div>
 
@@ -422,13 +441,21 @@
     try{
       const img = await fetch(`${API_BASE}/shop-image`).then(r => r.json());
       if(img.success && img.data){
-        const el = document.getElementById('siPhoto');
-        el.src = img.data;
-        el.style.display = 'block';
+        document.getElementById('siPhoto').src = img.data;
+        document.getElementById('siPhotoWrap').style.display = 'block';
       }
     }catch(e){}
   }
   loadShopInfo();
+
+  // 点缩略图放大查看，再点一下关闭
+  document.getElementById('siPhotoWrap').addEventListener('click', () => {
+    document.getElementById('lightboxImg').src = document.getElementById('siPhoto').src;
+    document.getElementById('lightbox').style.display = 'flex';
+  });
+  document.getElementById('lightbox').addEventListener('click', () => {
+    document.getElementById('lightbox').style.display = 'none';
+  });
 
   (async function init(){
     await loadSchedule();
