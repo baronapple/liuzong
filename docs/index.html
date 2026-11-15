@@ -35,6 +35,7 @@
   .shop-info .si-row{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;margin-top:8px;line-height:1.5;}
   .shop-info a{color:var(--ink);text-decoration:none;}
   .shop-info .si-phone a{color:var(--brass);font-weight:700;}
+  .shop-info .si-photo{width:100%;border-radius:12px;margin-top:12px;display:block;}
 
 
   .back-link{display:inline-block;font-size:13px;color:var(--ink-soft);text-decoration:none;margin-bottom:14px;}
@@ -109,15 +110,16 @@
 <div class="app">
 
   <div class="shop-info">
-    <div class="si-name">$10 Hair cut</div>
-    <div class="si-row">
-      📍 <a href="https://www.google.com/maps/search/?api=1&query=12+Becker+St+Sunnybank+QLD+4109" target="_blank">12 Becker Street, Sunnybank QLD 4109</a>
+    <div class="si-name" id="siName">$10 Hair cut</div>
+    <div class="si-row" id="siAddrRow">
+      📍 <a id="siAddr" href="https://www.google.com/maps/search/?api=1&query=12+Becker+St+Sunnybank+QLD+4109" target="_blank">12 Becker Street, Sunnybank QLD 4109</a>
     </div>
-    <div class="si-row si-phone">
-      📞 <a href="tel:0452661111">0452 661 111</a>
+    <div class="si-row si-phone" id="siPhoneRow">
+      📞 <a id="siPhone" href="tel:0452661111">0452 661 111</a>
     </div>
+    <img id="siPhoto" class="si-photo" style="display:none" alt="">
   </div>
-  
+
   <div class="week-nav">
     <button id="prevWeek">‹</button>
     <div class="week-label" id="weekLabel"></div>
@@ -388,6 +390,45 @@
 
   // 每 20 秒自动刷新当天空位，让大家看到的基本是最新的
   setInterval(() => { if(!busy && selectedDate) loadDaySlots(selectedDate); }, 20000);
+
+  /* ===== 店铺信息：名称 / 地址 / 电话 / 照片（由老板端设置，自动更新）===== */
+  // 页面里写死的名称/地址/电话只是备用：老板端保存过之后，以老板端的为准
+  async function loadShopInfo(){
+    try{
+      const [s, i] = await Promise.all([
+        fetch(`${API_BASE}/status`).then(r => r.json()),
+        fetch(`${API_BASE}/shop-info`).then(r => r.json())
+      ]);
+      // "理发店"是系统默认值（说明老板还没改过名字），这时保留页面里写的名字
+      if(s.success && s.data.shopName && s.data.shopName !== '理发店'){
+        document.getElementById('siName').textContent = s.data.shopName;
+      }
+      if(i.success){
+        const { address, phone } = i.data;
+        if(address){
+          const a = document.getElementById('siAddr');
+          a.textContent = address;
+          a.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(address);
+          document.getElementById('siAddrRow').style.display = 'flex';
+        }
+        if(phone){
+          const p = document.getElementById('siPhone');
+          p.textContent = phone;
+          p.href = 'tel:' + phone.replace(/[^\d+]/g, '');
+          document.getElementById('siPhoneRow').style.display = 'flex';
+        }
+      }
+    }catch(e){}
+    try{
+      const img = await fetch(`${API_BASE}/shop-image`).then(r => r.json());
+      if(img.success && img.data){
+        const el = document.getElementById('siPhoto');
+        el.src = img.data;
+        el.style.display = 'block';
+      }
+    }catch(e){}
+  }
+  loadShopInfo();
 
   (async function init(){
     await loadSchedule();

@@ -99,6 +99,9 @@
   }
   .weekday-btn.closed{background:var(--full);border-color:var(--full);color:#fff;}
   .weekday-hint{font-size:11.5px;color:#7A8290;margin-top:10px;text-align:center;}
+  .photo-btn{display:inline-block;background:var(--panel-2);border:1.5px solid var(--panel-line);color:#D6D9DE;border-radius:10px;padding:11px 16px;font-size:13.5px;font-weight:700;cursor:pointer;margin-right:8px;font-family:inherit;}
+  .photo-btn.danger{color:#E58A80;}
+  #photoPreview{width:100%;border-radius:12px;margin-bottom:10px;}
   .save-note{margin-top:20px;font-size:12px;color:#7A8290;text-align:center;}
   .preview-link{display:block;text-align:center;margin-top:16px;font-size:12px;color:#B7BCC5;}
 
@@ -140,6 +143,18 @@
   <div id="panel" class="panel">
     <div class="section-label">店铺名称</div>
     <input id="shopNameInput" class="name-input" type="text">
+
+    <div class="section-label">店铺地址</div>
+    <input id="addressInput" class="name-input" type="text" placeholder="例如 123 Example St, Brisbane QLD 4000">
+
+    <div class="section-label">联系电话</div>
+    <input id="phoneInput" class="name-input" type="tel" placeholder="04XXXXXXXX">
+
+    <div class="section-label">新地址照片（门店外观 / 入口）</div>
+    <img id="photoPreview" style="display:none" alt="">
+    <label class="photo-btn">选择照片<input type="file" id="photoFile" accept="image/*" hidden></label>
+    <button id="photoRemove" class="photo-btn danger" style="display:none">删除照片</button>
+    <div class="weekday-hint" id="infoNote">改完点输入框外面就会自动保存</div>
 
     <div class="section-label">营业状态</div>
     <div class="toggle-row">
@@ -236,6 +251,7 @@
     $('#panel').classList.add('show');
     syncUI();
     loadSchedule();
+    loadShopInfo();
   }
 
   async function loadSchedule(){
@@ -446,6 +462,114 @@
     div.innerText = str;
     return div.innerHTML;
   }
+
+  /* ===== 店铺信息：地址 / 电话 / 照片 ===== */
+  async function loadShopInfo(){
+    try{
+      const info = await (await fetch(API_BASE + '/shop-info')).json();
+      if(info.success){
+        $('#addressInput').value = info.data.address || '';
+        $('#phoneInput').value = info.data.phone || '';
+      }
+    }catch(e){}
+    try{
+      const img = await (await fetch(API_BASE + '/shop-image')).json();
+      showPhoto(img.success ? img.data : '');
+    }catch(e){}
+  }
+
+  function showPhoto(dataUrl){
+    const el = $('#photoPreview');
+    if(dataUrl){ el.src = dataUrl; el.style.display = 'block'; $('#photoRemove').style.display = ''; }
+    else { el.removeAttribute('src'); el.style.display = 'none'; $('#photoRemove').style.display = 'none'; }
+  }
+
+  function setInfoNote(text, isError){
+    const el = $('#infoNote');
+    el.textContent = text;
+    el.style.color = isError ? '#C24B3F' : '#7A8290';
+  }
+
+  async function saveShopInfo(){
+    setInfoNote('保存中...');
+    try{
+      const res = await fetch(API_BASE + '/shop-info', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pin, address: $('#addressInput').value, phone: $('#phoneInput').value })
+      });
+      if(res.status === 404){ setInfoNote('⚠️ 后端还没有这个功能，请先重新部署 worker.js（wrangler deploy）', true); return; }
+      const json = await res.json();
+      setInfoNote(json.success ? '已保存，顾客页面刷新后就会看到新地址' : '⚠️ 保存失败：' + (json.error || '未知错误'), !json.success);
+    }catch(e){
+      setInfoNote('⚠️ 网络错误，请重试', true);
+    }
+  }
+
+  // 把照片缩小到最长边 1000px 再压成 JPEG，手机拍的大图也能传
+  function resizeToJpeg(file){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        let q = 0.8, out = canvas.toDataURL('image/jpeg', q);
+        while(out.length > 330000 && q > 0.4){ q -= 0.1; out = canvas.toDataURL('image/jpeg', q); }
+        out.length > 330000 ? reject(new Error('too big')) : resolve(out);
+      };
+      img.onerror = () => reject(new Error('bad image'));
+      img.src = url;
+    });
+  }
+
+  async function uploadPhoto(dataUrl){
+    const res = await fetch(API_BASE + '/shop-image', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ pin, image: dataUrl })
+    });
+    if(res.status === 404) throw new Error('NO_BACKEND');
+    const json = await res.json();
+    if(!json.success) throw new Error(json.error || 'FAILED');
+  }
+
+  $('#addressInput').addEventListener('change', saveShopInfo);
+  $('#phoneInput').addEventListener('change', saveShopInfo);
+
+  $('#photoFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if(!file) return;
+    setInfoNote('处理照片中...');
+    try{
+      const dataUrl = await resizeToJpeg(file);
+      await uploadPhoto(dataUrl);
+      showPhoto(dataUrl);
+      setInfoNote('照片已更新');
+    }catch(err){
+      setInfoNote(err.message === 'NO_BACKEND'
+        ? '⚠️ 后端还没有这个功能，请先重新部署 worker.js（wrangler deploy）'
+        : '⚠️ 照片上传失败，换一张试试', true);
+    }
+  });
+
+  $('#photoRemove').addEventListener('click', async () => {
+    if(!confirm('删除这张照片？')) return;
+    try{
+      await uploadPhoto('');
+      showPhoto('');
+      setInfoNote('照片已删除');
+    }catch(err){
+      setInfoNote('⚠️ 删除失败，请重试', true);
+    }
+  });
 
   if(pin) tryUnlock(pin, true);
 </script>
